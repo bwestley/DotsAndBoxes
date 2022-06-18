@@ -29,6 +29,7 @@ namespace Hopscotch
 
             Columns = Util.Empty2DList(columnCount, rowCount - 1, false); // Column lines are not created in the last row.
             Rows = Util.Empty2DList(columnCount - 1, rowCount, false); // Row lines are not created in the last column.
+            WallCount = new();
             RecalculateWallCount();
         }
 

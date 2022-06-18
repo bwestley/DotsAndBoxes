@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using System.Runtime.Serialization.Formatters.Binary;
+using System.Timers;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -16,12 +17,6 @@ namespace Hopscotch
     /// </summary>
     public partial class MainWindow : Window
     {
-        private const bool LOAD = true;
-        private const bool SAVE = true;
-        private const double ORIGIN_X = 10;
-        private const double ORIGIN_Y = 10;
-        private const double SCALE = 50;
-
         private readonly SolidColorBrush TRANSPARENT = new(Color.FromArgb(0, 0, 0, 0));
         private readonly List<SolidColorBrush> SQUARE_FILL = new() {
             new(Color.FromArgb(0, 0, 0, 0)),
@@ -34,12 +29,19 @@ namespace Hopscotch
         private readonly SolidColorBrush LINE_STROKE = new(Color.FromRgb(100, 100, 100));
         private readonly SolidColorBrush OPTIMAL_MOVE_STROKE = new(Color.FromRgb(0, 255, 0));
 
-        private Grid Grid_;
-        private List<List<Line>> RowLines;
-        private List<List<Line>> ColumnLines;
-        private List<List<Rectangle>> Squares;
+        private readonly Grid Grid_;
+        private readonly List<List<Line>> RowLines;
+        private readonly List<List<Line>> ColumnLines;
+        private readonly List<List<Rectangle>> Squares;
 
+        private double Scale;
+        private double OriginX;
+        private double OriginY;
+        private readonly Timer ResizeTimer = new(100) { Enabled = false };
+
+#pragma warning disable CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider declaring as nullable.
         public MainWindow()
+#pragma warning restore CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider declaring as nullable.
         {
             InitializeComponent();
 
@@ -47,35 +49,113 @@ namespace Hopscotch
             Application.Current.MainWindow.WindowState = WindowState.Maximized;
 
             // Load grid from file or create a new one.
-            if (LOAD)
+            while (true)
             {
-                try
-                {
-                    using Stream stream = File.Open(System.IO.Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) + "/grid.bin", FileMode.Open);
-                    BinaryFormatter bin = new BinaryFormatter();
-                    Grid_ = (Grid)bin.Deserialize(stream);
-                }
-                catch (Exception)
-                {
-                    var dialog = new PromptWindow();
-                    dialog.ShowDialog();
-                    Grid_ = new Grid(dialog.Columns, dialog.Rows);
-                }
-            }
-            else
-            {
-                var dialog = new PromptWindow();
+                PromptWindow dialog = new();
                 dialog.ShowDialog();
-                Grid_ = new Grid(dialog.Columns, dialog.Rows);
+                bool? result = dialog.CreateNewGrid;
+                if (result == true)
+                {
+                    Grid_ = new Grid(dialog.Columns, dialog.Rows);
+                    break;
+                }
+                else if (result == false)
+                {
+                    try
+                    {
+                        Microsoft.Win32.OpenFileDialog fileDialog = new()
+                        {
+                            Title = "Load Grid From File"
+                        };
+                        if (fileDialog.ShowDialog() == true)
+                        {
+                            using Stream stream = fileDialog.OpenFile();
+                            BinaryFormatter bin = new();
+#pragma warning disable SYSLIB0011 // Type or member is obsolete
+                            Grid_ = (Grid)bin.Deserialize(stream);
+#pragma warning restore SYSLIB0011 // Type or member is obsolete
+                            break;
+                        }
+                    }
+                    catch (Exception e)
+                    {
+                        MessageBox.Show("Unable to load grid from a file: " + e.Message);
+                    }
+                }
+                else
+                {
+                    Application.Current.Shutdown();
+                    return;
+                }
             }
-
-            // Get optimal moves.
-            HashSet<Wall> optimalMoves = Grid_.GetOptimalMoves();
 
             // Create squares and column and row lines.
             ColumnLines = new List<List<Line>>();
             RowLines = new List<List<Line>>();
             Squares = new List<List<Rectangle>>();
+            Redraw();
+
+            // Register event listeners.
+            Closing += Cleanup;
+            MouseUp += Clicked;
+            ResizeTimer.Elapsed += new ElapsedEventHandler(ResizingDone);
+            SizeChanged += Resized;
+        }
+
+        private void Cleanup(object? sender, System.ComponentModel.CancelEventArgs e)
+        {
+            // Save grid to file.
+            try
+            {
+                // Save data file.
+                Microsoft.Win32.SaveFileDialog fileDialog = new();
+                if (fileDialog.ShowDialog() == true)
+                {
+                    using Stream stream = fileDialog.OpenFile();
+                    BinaryFormatter bin = new();
+#pragma warning disable SYSLIB0011 // Type or member is obsolete
+                    bin.Serialize(stream, Grid_);
+#pragma warning restore SYSLIB0011 // Type or member is obsolete
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.ToString());
+            }
+        }
+
+        private void ResizingDone(object? sender, ElapsedEventArgs e)
+        {
+            ResizeTimer.Stop();
+            Dispatcher.Invoke(Redraw);
+        }
+
+        private void Resized(object sender, SizeChangedEventArgs e)
+        {
+            ResizeTimer.Stop();
+            ResizeTimer.Start();
+        }
+
+        private void Redraw()
+        {
+            Scale = Math.Min(MainCanvas.ActualWidth / (Grid_.ColumnCount - 1), MainCanvas.ActualHeight / (Grid_.RowCount - 1)) * 0.9;
+            OriginX = (MainCanvas.ActualWidth - Scale * (Grid_.ColumnCount - 1)) / 2;
+            OriginY = (MainCanvas.ActualHeight - Scale * (Grid_.RowCount - 1)) / 2;
+
+            if (double.IsNaN(Scale) || double.IsNaN(OriginX) || double.IsNaN(OriginY))
+            {
+                Scale = 10;
+                OriginX = 20;
+                OriginY = 20;
+            }
+
+            // Get optimal moves.
+            HashSet<Wall> optimalMoves = Grid_.GetOptimalMoves();
+
+            MainCanvas.Children.Clear();
+            ColumnLines.Clear();
+            RowLines.Clear();
+            Squares.Clear();
 
             Wall wall;
 
@@ -94,12 +174,12 @@ namespace Hopscotch
                             // Draw a square.
                             Rectangle square = new()
                             {
-                                Width = SCALE,
-                                Height = SCALE,
+                                Width = Scale,
+                                Height = Scale,
                                 Fill = SQUARE_FILL[Grid_.GetWallCount(column, row)]
                             };
-                            Canvas.SetLeft(square, column * SCALE + ORIGIN_X);
-                            Canvas.SetTop(square, row * SCALE + ORIGIN_Y);
+                            Canvas.SetLeft(square, column * Scale + OriginX);
+                            Canvas.SetTop(square, row * Scale + OriginY);
                             Canvas.SetZIndex(square, -column * Grid_.ColumnCount - row);
                             MainCanvas.Children.Add(square);
                             Squares[column].Add(square);
@@ -109,12 +189,12 @@ namespace Hopscotch
                         wall = Grid_.GetWall(true, column, row);
                         Line line = new()
                         {
-                            X1 = column * SCALE + ORIGIN_X,
-                            Y1 = row * SCALE + ORIGIN_Y,
-                            X2 = column * SCALE + ORIGIN_X,
-                            Y2 = (row + 1) * SCALE + ORIGIN_Y,
+                            X1 = column * Scale + OriginX,
+                            Y1 = row * Scale + OriginY,
+                            X2 = column * Scale + OriginX,
+                            Y2 = (row + 1) * Scale + OriginY,
                             Stroke = wall.Set ? LINE_STROKE : optimalMoves.Contains(wall) ? OPTIMAL_MOVE_STROKE : TRANSPARENT,
-                            StrokeThickness = 10
+                            StrokeThickness = Scale / 5
                         };
                         MainCanvas.Children.Add(line);
                         ColumnLines[column].Add(line);
@@ -125,12 +205,12 @@ namespace Hopscotch
                         wall = Grid_.GetWall(false, column, row);
                         Line line = new()
                         {
-                            X1 = column * SCALE + ORIGIN_X,
-                            Y1 = row * SCALE + ORIGIN_Y,
-                            X2 = (column + 1) * SCALE + ORIGIN_X,
-                            Y2 = row * SCALE + ORIGIN_Y,
+                            X1 = column * Scale + OriginX,
+                            Y1 = row * Scale + OriginY,
+                            X2 = (column + 1) * Scale + OriginX,
+                            Y2 = row * Scale + OriginY,
                             Stroke = wall.Set ? LINE_STROKE : optimalMoves.Contains(wall) ? OPTIMAL_MOVE_STROKE : TRANSPARENT,
-                            StrokeThickness = 10
+                            StrokeThickness = Scale / 5
                         };
                         MainCanvas.Children.Add(line);
                         RowLines[column].Add(line);
@@ -140,57 +220,30 @@ namespace Hopscotch
                     Ellipse ellipse = new()
                     {
                         Fill = DOT_FILL,
-                        Width = 10,
-                        Height = 10
+                        Width = Scale / 5,
+                        Height = Scale / 5
                     };
-                    Canvas.SetLeft(ellipse, column * SCALE + ORIGIN_X - 10 / 2);
-                    Canvas.SetTop(ellipse, row * SCALE + ORIGIN_Y - 10 / 2);
+                    Canvas.SetLeft(ellipse, (column - 0.1) * Scale + OriginX);
+                    Canvas.SetTop(ellipse, (row - 0.1) * Scale + OriginY);
                     Canvas.SetZIndex(ellipse, 200000 + column * Grid_.ColumnCount + row);
                     MainCanvas.Children.Add(ellipse);
                 }
             }
-
-            // Register event listeners.
-            Closing += Cleanup;
-            CompositionTarget.Rendering += Render;
-            MouseUp += Clicked;
-        }
-
-        private void Cleanup(object? sender, System.ComponentModel.CancelEventArgs e)
-        {
-            // Save grid to file.
-            if (!SAVE) return;
-            try
-            {
-                // Save data file.
-                using Stream stream = File.Open(System.IO.Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) + "/grid.bin", FileMode.Create);
-                BinaryFormatter bin = new BinaryFormatter();
-                bin.Serialize(stream, Grid_);
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(ex.ToString());
-            }
-        }
-
-        private void Render(object? sender, EventArgs e)
-        {
-            
         }
 
         private void Clicked(object? sender, MouseButtonEventArgs e)
         {
             // Determine the wall clicked on.
             Point point = e.GetPosition(MainCanvas);
-            int column = (int)((point.X - ORIGIN_X)/ SCALE);
-            double columnRemainder = (point.X - ORIGIN_X) % SCALE;
-            int row = (int)((point.Y - ORIGIN_Y) / SCALE);
-            double rowRemainder = (point.Y - ORIGIN_Y) % SCALE;
+            int column = (int)((point.X - OriginX)/ Scale);
+            double columnRemainder = (point.X - OriginX) % Scale;
+            int row = (int)((point.Y - OriginY) / Scale);
+            double rowRemainder = (point.Y - OriginY) % Scale;
             bool isColumn;
 
             if (columnRemainder > rowRemainder) // column + 1 or row
             {
-                if (SCALE - columnRemainder < rowRemainder) // column += 1
+                if (Scale - columnRemainder < rowRemainder) // column += 1
                 {
                     column++;
                     isColumn = true;
@@ -202,7 +255,7 @@ namespace Hopscotch
             }
             else // row + 1 or column
             {
-                if (SCALE - rowRemainder < columnRemainder) // row + 1
+                if (Scale - rowRemainder < columnRemainder) // row + 1
                 {
                     row++;
                     isColumn = false;

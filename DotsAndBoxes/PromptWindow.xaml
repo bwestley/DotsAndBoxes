@@ -5,11 +5,13 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:Hopscotch"
         mc:Ignorable="d"
+        Icon="./application.ico"
         Title="Grid Configuration" Height="150" Width="200">
     <StackPanel>
-        <TextBlock Text="Columns" />
+        <Button Content="Load grid.bin" Click="LoadButtonClicked" />
+        <TextBlock Text="Columns (integer greater than 1)" />
         <TextBox x:Name="ColumnsTextBox" />
-        <TextBlock Text="Rows" />
+        <TextBlock Text="Rows (integer greater than 1)" />
         <TextBox x:Name="RowsTextBox" />
         <Button Content="OK" Click="OKButtonClicked" />
     </StackPanel>

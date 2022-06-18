@@ -5,8 +5,12 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:Hopscotch"
         mc:Ignorable="d"
-        Title="MainWindow" Height="450" Width="800">
+        Icon="./application.ico"
+        Title="Dots and Boxes Analysis" Height="450" Width="800">
     <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition/>
+        </Grid.ColumnDefinitions>
         <Canvas x:Name="MainCanvas" />
     </Grid>
 </Window>

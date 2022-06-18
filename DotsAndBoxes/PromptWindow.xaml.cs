@@ -19,7 +19,13 @@ namespace Hopscotch
     /// </summary>
     public partial class PromptWindow : Window
     {
-        public PromptWindow() => InitializeComponent();
+        public bool? CreateNewGrid;
+
+        public PromptWindow()
+        {
+            InitializeComponent();
+            CreateNewGrid = null;
+        }
 
         public int Columns
         {
@@ -32,12 +38,19 @@ namespace Hopscotch
             set => RowsTextBox.Text = value.ToString();
         }
 
-        private void OKButtonClicked(object sender, System.Windows.RoutedEventArgs e)
+        private void LoadButtonClicked(object sender, RoutedEventArgs e)
         {
-            int columns;
-            int rows;
-            if (int.TryParse(ColumnsTextBox.Text, out columns) && int.TryParse(RowsTextBox.Text, out rows) && columns > 1 && rows > 1)
+            CreateNewGrid = false;
+            DialogResult = true;
+        }
+
+        private void OKButtonClicked(object sender, RoutedEventArgs e)
+        {
+            if (int.TryParse(ColumnsTextBox.Text, out int columns) && int.TryParse(RowsTextBox.Text, out int rows) && columns > 1 && rows > 1)
+            {
+                CreateNewGrid = true;
                 DialogResult = true;
+            }
         }
     }
 }
